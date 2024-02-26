@@ -1,7 +1,9 @@
+"use strict";
 import { Shader } from './scripts/shader.js';
 import { Skybox } from './scripts/skybox.js';
 import { UI } from './scripts/ui.js';
-
+import { Camera } from './scripts/camera.js';
+import { HDRTexture } from './scripts/texture.js';
 
 // Set up canvas and GL variables
 const canvas = createCanvas();
@@ -14,33 +16,55 @@ const quadShader = new Shader(GL, './shaders/quad.vert', './shaders/quad.frag');
 const mainShader = new Shader(GL, './shaders/quad.vert', './shaders/main.frag');
 
 // Skybox
-const skybox = new Skybox(GL, 1, './assets/skybox.png');
+// const skybox = new Skybox(GL, 1, './assets/skybox.png');
+const skybox = new HDRTexture(GL, 1, './assets/little_paris_eiffel_tower_1k.hdr');
 
 // Variables for mouse movement
 let mousePos = [0.75, 0]; // Mouse position in normalized device coordinates, from -1 to +1
 let frameCount = 0;
-let FPS = 0;
-let lastFrameTime = performance.now();
 
-let cameraPos = [0, 0, 2];
-let cameraLootAt = [0, 0, -1];
+const camera = new Camera(50, true);
 let pressedKeys = {};
 
 // Create UI
 const ui = new UI();
-ui.addSlider('FOV', 75, 0, 179.99, 0.1);
-ui.addSlider('focalDistance', 2, 0.1, 10, 0.1);
-ui.addSlider('aperture', 0.1, 0.01, 1, 0.01);
+ui.addSlider('FOV', 75, 0, 179.99, 0.1, (event) => {
+    camera.fov = event.target.value;
+    frameCount = 0;
+});
+// ui.addSlider('focusDistance', 2, 0.1, 10, 0.1, (event) => {
+//     camera.focusDistance = event.target.value;
+//     frameCount = 0;
+// });
+// ui.addSlider('aperture', 0.1, 0.01, 1, 0.1, (event) => {
+//     camera.aperture = event.target.value;
+//     frameCount = 0;
+// });
+// ui.addSlider('exposure', 1, -3, 3, 0.1, (event) => {
+//     // skybox.image.exposure = event.target.value;
+//     frameCount = 0;
+// });
+ui.addSlider('ResolutionScale', 0.5, 0.1, 1.0, 0.1, (event) => {
+    canvas.width = window.innerWidth * event.target.value;
+    canvas.height = window.innerHeight * event.target.value;
+    GL.viewport(0, 0, canvas.width, canvas.height);
+    frameCount = 0;
+});
+ui.addCheckbox('OrbitCam', camera.orbitCam, (event) => {
+    camera.toggleOrbitCam();
+    frameCount = 0;
+});
+ui.addCheckbox('denoise', true);
+ui.addTextHint('Press R to toggle rendering');
 ui.addText('FrameCount', 0);
-ui.addFPSCounter();
 
 // Returns canvas element 
 function createCanvas() {
     const canvas = document.createElement('canvas');
     canvas.id = "GLCanvas";
     document.body.appendChild(canvas);
-    canvas.width = window.innerWidth;
-    canvas.height = window.innerHeight;
+    canvas.width = 0.5*window.innerWidth;
+    canvas.height = 0.5*window.innerHeight;
     return canvas;
 }
 
@@ -73,16 +97,11 @@ function updateMouse(event) {
         frameCount = 0;
     }
     // Update mouse position
-    mousePos[0] -= event.movementX / window.innerWidth / 3;
+    mousePos[0] -= event.movementX / window.innerWidth;
     mousePos[1] += event.movementY / window.innerHeight;
     // mousePos[0] will be used for yaw and mousePos[1] is used for pitch
     // Clamp mousePos[1] to prevent the camera from flipping
     mousePos[1] = Math.min(Math.max(mousePos[1], -0.99), 0.99); // 0.99 to prevent gimbal lock
-    
-    cameraLootAt[0] = Math.cos(mousePos[0] * Math.PI * 2) * Math.cos(mousePos[1] * Math.PI / 2);
-    cameraLootAt[1] = Math.sin(mousePos[1] * Math.PI / 2);
-    cameraLootAt[2] = Math.sin(mousePos[0] * Math.PI * 2) * Math.cos(mousePos[1] * Math.PI / 2);
-    console.log(cameraLootAt);
 }
 
 function handleKeys(event){
@@ -98,97 +117,103 @@ function handleKeys(event){
     }
 }
 
-function updateCamera(){
-    // If a ney is pressed then frameCount is reset
-    if(Object.keys(pressedKeys).length > 0){
-        frameCount = 0;
-    }
-    // Keyboard input
-    if(pressedKeys["w"]){
-        cameraPos[0] += cameraLootAt[0] * 0.02;
-        cameraPos[1] += cameraLootAt[1] * 0.02;
-        cameraPos[2] += cameraLootAt[2] * 0.02;
-    }
-    if(pressedKeys["s"]){
-        cameraPos[0] -= cameraLootAt[0] * 0.02;
-        cameraPos[1] -= cameraLootAt[1] * 0.02;
-        cameraPos[2] -= cameraLootAt[2] * 0.02;
-    }
-    if(pressedKeys["a"]){
-        cameraPos[0] += cameraLootAt[2] * 0.02;
-        cameraPos[2] -= cameraLootAt[0] * 0.02;
-    }
-    if(pressedKeys["d"]){
-        cameraPos[0] -= cameraLootAt[2] * 0.02;
-        cameraPos[2] += cameraLootAt[0] * 0.02;
-    }
-    if(pressedKeys[" "]){
-        cameraPos[1] += 0.02;
-    }
-    if(pressedKeys["shift"]){
-        cameraPos[1] -= 0.02;
-    }
-}
-
 // Render loop, updates variables and matrices and draw each frame
 function renderLoop(pingFBColorTexture, pingFB, pongFBColorTexture, pongFB) {
-    updateCamera();
+    // If any key is pressed, reset the frame count
+    // if (Object.keys(pressedKeys).length > 0) {
+    //     frameCount = 0;
+    // }
+    if (camera.render == false) {
+        frameCount = 0;
+    }
+    
+    // Update the camera
+    camera.update(mousePos, pressedKeys);
+    // Update the UI
     ui.updateVariable('FrameCount', frameCount);
+
     quadShader.use();
     quadShader.setUniform('uFrameAccumulator', 0, 'int');
     quadShader.setUniform('uFrameCount', frameCount, 'int');
+    quadShader.setUniform('uResolution', [canvas.width, canvas.height], 'vec2');
+    quadShader.setUniform('uDenoise', ui.variables.denoise, 'bool');
 
     mainShader.use();
     mainShader.setUniform('uFrameAccumulator', 0, 'int');
     mainShader.setUniform('uFrameCount', frameCount, 'int');
+    mainShader.setUniform('uTime', performance.now() * 0.001, 'float');
     mainShader.setUniform('uAspectRatio', canvas.width/canvas.height, 'float');
-    mainShader.setUniform('uCameraPos', cameraPos, 'vec3');
-    mainShader.setUniform('uCameraLookAt', cameraLootAt, 'vec3');
-    mainShader.setUniform('uFOV', ui.variables.FOV, 'float');
-    mainShader.setUniform('uFocalDistance', ui.variables.focalDistance, 'float');
-    mainShader.setUniform('uAperture', ui.variables.aperture, 'float');
-    
+    mainShader.setUniform('uCameraPos', camera.getPosition(), 'vec3');
+    mainShader.setUniform('uCameraLookAt', camera.getLookAt(), 'vec3');
+    // mainShader.setUniform('uCameraResolution', camera.getUp(), 'vec3');
+    mainShader.setUniform('uFOV', camera.fov, 'float');
+    mainShader.setUniform('uFocusDistance', camera.focusDistance, 'float');
+    mainShader.setUniform('uAperture', camera.aperture, 'float');
+    mainShader.setUniform('uSeed', Math.random(), 'float');
+    mainShader.setUniform('uExposure', ui.variables.exposure, 'float');
+
     if(frameCount % 2 == 0){// Even frame, sample from pingFB, write to pongFB    
         mainShader.use();
         GL.bindTexture(GL.TEXTURE_2D, pingFBColorTexture);
         GL.bindFramebuffer(GL.FRAMEBUFFER, pongFB);
-        GL.clearColor(1.0, 0.0, 0.0, 1.0);
+        GL.clearColor(0.0, 0.0, 0.0, 1.0);
         GL.drawArrays(GL.TRIANGLE_STRIP, 0, 4);
         
         quadShader.use();
         GL.bindTexture(GL.TEXTURE_2D, pongFBColorTexture);
         GL.bindFramebuffer(GL.FRAMEBUFFER, null);
-        GL.clearColor(0.0, 1.0, 0.0, 1.0);
+        GL.clearColor(0.0, 0.0, 0.0, 1.0);
         GL.drawArrays(GL.TRIANGLE_STRIP, 0, 4);
     }
     else{// Odd frame, sample from pongFB, write to pingFB
         mainShader.use();
         GL.bindTexture(GL.TEXTURE_2D, pongFBColorTexture);
         GL.bindFramebuffer(GL.FRAMEBUFFER, pingFB);
-        GL.clearColor(1.0, 0.0, 0.0, 1.0);
+        GL.clearColor(0.0, 0.0, 0.0, 1.0);
         GL.drawArrays(GL.TRIANGLE_STRIP, 0, 4);
         
         quadShader.use();
         GL.bindTexture(GL.TEXTURE_2D, pingFBColorTexture);
         GL.bindFramebuffer(GL.FRAMEBUFFER, null);
-        GL.clearColor(0.0, 1.0, 0.0, 1.0);
+        GL.clearColor(0.0, 0.0, 0.0, 1.0);
         GL.drawArrays(GL.TRIANGLE_STRIP, 0, 4);
     }
 
+    if(pressedKeys['f']){
+        // Download the image
+        var a = document.createElement('a');
+        a.href = canvas.toDataURL();
+        a.download = 'image.png';
+        a.click();
+    }
 
     frameCount++;
-    FPS = 0.95 * FPS + 0.05 * Math.round(1000 / (performance.now() - lastFrameTime));
-    lastFrameTime = performance.now();
-    ui.elements['fpsCounter'].innerHTML = `FPS: ${FPS.toFixed(0)}`;
     
     // Request a next frame
     requestAnimationFrame(function () { renderLoop(pingFBColorTexture, pingFB, pongFBColorTexture, pongFB); }); // Request the next frame
+}
+
+function resizeCallback(pingFBColorTexture, pingFB, pongFBColorTexture, pongFB){
+    frameCount = 0;
+    GL.bindTexture(GL.TEXTURE_2D, pingFBColorTexture);
+    GL.texImage2D(GL.TEXTURE_2D, 0, GL.RGBA, canvas.width, canvas.height, 0, GL.RGBA, GL.UNSIGNED_BYTE, null);
+    GL.bindFramebuffer(GL.FRAMEBUFFER, pingFB);
+    GL.framebufferTexture2D(GL.FRAMEBUFFER, GL.COLOR_ATTACHMENT0, GL.TEXTURE_2D, pingFBColorTexture, 0);
+
+    GL.bindTexture(GL.TEXTURE_2D, pongFBColorTexture);
+    GL.texImage2D(GL.TEXTURE_2D, 0, GL.RGBA, canvas.width, canvas.height, 0, GL.RGBA, GL.UNSIGNED_BYTE, null);
+    GL.bindFramebuffer(GL.FRAMEBUFFER, pongFB);
+    GL.framebufferTexture2D(GL.FRAMEBUFFER, GL.COLOR_ATTACHMENT0, GL.TEXTURE_2D, pongFBColorTexture, 0);
+    
+    GL.bindTexture(GL.TEXTURE_2D, null);
+    GL.bindFramebuffer(GL.FRAMEBUFFER, null);
 }
 
 // Main function
 function main() {
     // Add event listener for mouse movement
     window.addEventListener('mousemove', updateMouse);
+    ui.preventMouseEvents(updateMouse); // Prevent mouse events when hovering over the UI
     window.addEventListener('keydown', handleKeys);
     window.addEventListener('keyup', handleKeys);
 
@@ -231,7 +256,6 @@ function main() {
     GL.texImage2D(GL.TEXTURE_2D, 0, GL.RGBA, canvas.width, canvas.height, 0, GL.RGBA, GL.UNSIGNED_BYTE, null);
     GL.bindTexture(GL.TEXTURE_2D, null);
 
-
     const pingFB = GL.createFramebuffer();
     GL.bindFramebuffer(GL.FRAMEBUFFER, pingFB);
     GL.framebufferTexture2D(GL.FRAMEBUFFER, GL.COLOR_ATTACHMENT0, GL.TEXTURE_2D, pingFBColorTexture, 0);
@@ -241,20 +265,27 @@ function main() {
     GL.bindFramebuffer(GL.FRAMEBUFFER, pongFB);
     GL.framebufferTexture2D(GL.FRAMEBUFFER, GL.COLOR_ATTACHMENT0, GL.TEXTURE_2D, pongFBColorTexture, 0);
     GL.bindFramebuffer(GL.FRAMEBUFFER, null);
+
+    // const pingFBDepthBuffer = GL.createRenderbuffer();
+    // GL.bindFramebuffer(GL.FRAMEBUFFER, pingFB);
+    // GL.bindRenderbuffer(GL.RENDERBUFFER, pingFBDepthBuffer);
+    // GL.renderbufferStorage(GL.RENDERBUFFER, GL.DEPTH_COMPONENT24, canvas.width, canvas.height);
+    // GL.framebufferRenderbuffer(GL.FRAMEBUFFER, GL.DEPTH_ATTACHMENT, GL.RENDERBUFFER, pingFBDepthBuffer);
+    // GL.bindRenderbuffer(GL.RENDERBUFFER, null);
+
+    // const pongFBDepthBuffer = GL.createRenderbuffer();
+    // GL.bindFramebuffer(GL.FRAMEBUFFER, pongFB);
+    // GL.bindRenderbuffer(GL.RENDERBUFFER, pongFBDepthBuffer);
+    // GL.renderbufferStorage(GL.RENDERBUFFER, GL.DEPTH_COMPONENT24, canvas.width, canvas.height);
+    // GL.framebufferRenderbuffer(GL.FRAMEBUFFER, GL.DEPTH_ATTACHMENT, GL.RENDERBUFFER, pongFBDepthBuffer);
+    // GL.bindRenderbuffer(GL.RENDERBUFFER, null);
+    // GL.bindFramebuffer(GL.FRAMEBUFFER, null);
     
     window.addEventListener('resize', () => {
-        frameCount = 0;
-        GL.bindTexture(GL.TEXTURE_2D, pingFBColorTexture);
-        GL.texImage2D(GL.TEXTURE_2D, 0, GL.RGBA, canvas.width, canvas.height, 0, GL.RGBA, GL.UNSIGNED_BYTE, null);
-        GL.bindFramebuffer(GL.FRAMEBUFFER, pingFB);
-        GL.framebufferTexture2D(GL.FRAMEBUFFER, GL.COLOR_ATTACHMENT0, GL.TEXTURE_2D, pingFBColorTexture, 0);
-        
-        GL.bindTexture(GL.TEXTURE_2D, pongFBColorTexture);
-        GL.texImage2D(GL.TEXTURE_2D, 0, GL.RGBA, canvas.width, canvas.height, 0, GL.RGBA, GL.UNSIGNED_BYTE, null);
-        GL.bindFramebuffer(GL.FRAMEBUFFER, pongFB);
-        GL.framebufferTexture2D(GL.FRAMEBUFFER, GL.COLOR_ATTACHMENT0, GL.TEXTURE_2D, pongFBColorTexture, 0);
-        
-        GL.bindFramebuffer(GL.FRAMEBUFFER, null);
+        resizeCallback(pingFBColorTexture, pingFB, pongFBColorTexture, pongFB);
+    });
+    ui.elements['ResolutionScale'].input.addEventListener('input', () => {
+        resizeCallback(pingFBColorTexture, pingFB, pongFBColorTexture, pongFB);
     });
 
     // Initialize the shader program

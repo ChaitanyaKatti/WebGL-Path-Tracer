@@ -10,7 +10,7 @@ export class UI {
         document.body.appendChild(this.rack);
     }
 
-    addSlider(variableName, value, min, max, step) {
+    addSlider(variableName, value, min, max, step, callBack = null) {
         this.variables[variableName] = value;
 
         // Title
@@ -52,9 +52,13 @@ export class UI {
             input: input,
             output: output
         };
+
+        if (callBack) {
+            input.addEventListener('input', callBack);
+        }
     }
 
-    addCheckbox(variableName, value) {
+    addCheckbox(variableName, value, callBack = null) {
         this.variables[variableName] = value;
 
         // Checkbox input
@@ -83,6 +87,10 @@ export class UI {
             type: 'checkbox',
             input: input
         };
+
+        if (callBack) {
+            input.addEventListener('input', callBack);
+        }
     }
 
     addFPSCounter() {
@@ -110,7 +118,7 @@ export class UI {
         this.elements[variableName] = titleDiv;
     }
 
-    addColorPicker(variableName, value) {
+    addColorPicker(variableName, value, callBack = null) {
         this.variables[variableName] = value;
 
 
@@ -141,6 +149,17 @@ export class UI {
             type: 'colorPicker',
             input: input
         };
+
+        if (callBack) {
+            input.addEventListener('input', callBack);
+        }
+    }
+
+    addTextHint(text) {
+        let textDiv = document.createElement('div');
+        textDiv.className = 'text-container';
+        textDiv.innerHTML = text;
+        this.rack.appendChild(textDiv);
     }
 
     updateVariable(variableName, value) {
@@ -154,6 +173,16 @@ export class UI {
         } else {
             this.elements[variableName].innerHTML = variableName + ' : ' + value.toString();
         }
+    }
+
+    // Prevent other mouse event listeners from being called when hovering over the UI
+    preventMouseEvents(func) {
+        this.rack.addEventListener('mouseover', () => {
+            window.removeEventListener('mousemove', func);
+        });
+        this.rack.addEventListener('mouseout', () => {
+            window.addEventListener('mousemove', func);
+        });
     }
 }
 

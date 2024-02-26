@@ -60,7 +60,7 @@ canvas {
     overflow-y: auto;
     overflow-x: hidden;
     scrollbar-width: thin;
-    scrollbar-color: #973c3c #000000;
+    scrollbar-color: #ffffffa7 #00000000;
 }
 
 .rack-element-title {
