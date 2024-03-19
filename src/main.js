@@ -17,7 +17,7 @@ const mainShader = new Shader(GL, './shaders/quad.vert', './shaders/main.frag');
 
 // Skybox
 // const skybox = new Skybox(GL, 1, './assets/skybox.png');
-const skybox = new HDRTexture(GL, 1, './assets/little_paris_eiffel_tower_1k.hdr');
+// const skybox = new HDRTexture(GL, 1, './assets/little_paris_eiffel_tower_1k.hdr');
 
 // Variables for mouse movement
 let mousePos = [0.75, 0]; // Mouse position in normalized device coordinates, from -1 to +1
@@ -292,8 +292,8 @@ function main() {
     quadShader.init().then(() => {
         mainShader.init().then(() => {
             mainShader.use();
-            mainShader.setUniform('uSkybox', 1, 'int');
-            skybox.bind();
+            // mainShader.setUniform('uSkybox', 1, 'int');
+            // skybox.bind();
 
             renderLoop(pingFBColorTexture, pingFB, pongFBColorTexture, pongFB); // Start the render loop
         });
